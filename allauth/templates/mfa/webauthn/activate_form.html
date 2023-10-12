@@ -1,0 +1,91 @@
+{% extends "mfa/totp/base.html" %}
+{% load allauth i18n %}
+{% block head_title %}
+    {% translate "Activate WebAuthn" %}
+{% endblock head_title %}
+{% block content %}
+    {% element h1 %}
+        {% translate "Activate WebAuthn" %}
+    {% endelement %}
+    {% url 'mfa_activate_webauthn' as action_url %}
+    {% element form form=form method="post" action=action_url %}
+        {% slot body %}
+            <p>{% translate "Click the button below to register your device." %}</p>
+        {% endslot %}
+        {% slot actions %}
+            {% csrf_token %}
+            {% element fields form=form %}{% endelement %}
+            {% element button  type="submit" %}
+                {% trans "Activate" %}
+            {% endelement %}
+        {% endslot %}
+    {% endelement %}
+
+    <script>
+    function ab2str(buf) {
+        if (buf == null) {
+            return null;
+        };
+
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+    }
+
+    function b64str2ab(b64_encoded_string) {
+        if (b64_encoded_string == null) {
+            return null;
+        };
+
+        let string = atob(b64_encoded_string.replace(/_/g, '/').replace(/-/g, '+')),
+            buf = new ArrayBuffer(string.length),
+            bufView = new Uint8Array(buf);
+        for (var i = 0, strLen = string.length; i < strLen; i++) {
+            bufView[i] = string.charCodeAt(i);
+        }
+        return buf;
+    }
+
+    let credentialCreationOptions = {{ creation_options|safe }};
+
+    function requestCredentials() {
+        credentialCreationOptions.challenge = b64str2ab(credentialCreationOptions.challenge);
+        for (let i = 0; i < credentialCreationOptions.excludeCredentials.length; i++) {
+            credentialCreationOptions.excludeCredentials[i].id = b64str2ab(credentialCreationOptions.excludeCredentials[i].id);
+        }
+        credentialCreationOptions.user.id = b64str2ab(credentialCreationOptions.user.id);
+
+        navigator.credentials.create({
+            publicKey: credentialCreationOptions
+        }).then((attestationCredential) => {
+            let response = attestationCredential.response,
+                serializableAttestationCredential = {
+                    id: attestationCredential.id,
+                    rawId: ab2str(attestationCredential.rawId),
+                    response: {
+                        clientDataJSON: ab2str(response.clientDataJSON),
+                        attestationObject: ab2str(response.attestationObject),
+                    },
+                    type: attestationCredential.type,
+                },
+                tokenField = document.querySelector('[name=token]'),
+                form = document.forms[0];
+
+            tokenField.value = JSON.stringify(serializableAttestationCredential);
+            form.submit();
+
+        }, (reason) => {
+            console.debug("Registration error: ", reason);
+
+            let errMsgNode = document.createElement("p"),
+                tokenField = document.querySelector('#id_token');
+
+            errMsgNode.setAttribute("class", "text-danger");
+            errMsgNode.appendChild(document.createTextNode(reason));
+            tokenField.parentNode.insertBefore(errMsgNode, tokenField.nextSibling);
+        });
+    }
+    document.forms[0].addEventListener("submit", (event) => {
+        event.preventDefault();
+        requestCredentials();
+    });
+    </script>
+{% endblock content %}

@@ -39,6 +39,20 @@ class AppSettings(object):
         """
         return self._setting("TOTP_ISSUER", "")
 
+    @property
+    def WEBAUTHN_RP_ID(self):
+        """
+        Relying party ID.
+        """
+        return self._setting("WEBAUTHN_RP_ID", None)
+
+    @property
+    def WEBAUTHN_RP_NAME(self):
+        """
+        Relaying party name.
+        """
+        return self._setting("WEBAUTHN_RP_NAME", None)
+
 
 _app_settings = AppSettings("MFA_")
 

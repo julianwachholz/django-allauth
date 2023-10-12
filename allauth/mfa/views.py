@@ -1,4 +1,5 @@
 import base64
+from typing import Any
 
 from django import forms
 from django.contrib import messages
@@ -14,9 +15,13 @@ from allauth.account import app_settings as account_settings
 from allauth.account.adapter import get_adapter as get_account_adapter
 from allauth.account.decorators import reauthentication_required
 from allauth.account.stages import LoginStageController
-from allauth.mfa import app_settings, totp
+from allauth.mfa import app_settings, totp, webauthn
 from allauth.mfa.adapter import get_adapter
-from allauth.mfa.forms import ActivateTOTPForm, AuthenticateForm
+from allauth.mfa.forms import (
+    ActivateTOTPForm,
+    ActivateWebAuthnForm,
+    AuthenticateForm,
+)
 from allauth.mfa.models import Authenticator
 from allauth.mfa.recovery_codes import RecoveryCodes
 from allauth.mfa.stages import AuthenticateStage
@@ -30,7 +35,11 @@ class AuthenticateView(FormView):
     def dispatch(self, request, *args, **kwargs):
         self.stage = LoginStageController.enter(request, AuthenticateStage.key)
         if not self.stage or not is_mfa_enabled(
-            self.stage.login.user, [Authenticator.Type.TOTP]
+            self.stage.login.user,
+            [
+                Authenticator.Type.TOTP,
+                Authenticator.Type.WEBAUTHN,
+            ],
         ):
             return HttpResponseRedirect(reverse("account_login"))
         return super().dispatch(request, *args, **kwargs)
@@ -147,6 +156,87 @@ class DeactivateTOTPView(FormView):
 
 
 deactivate_totp = DeactivateTOTPView.as_view()
+
+
+@method_decorator(reauthentication_required, name="dispatch")
+class ActivateWebAuthnView(FormView):
+    form_class = ActivateWebAuthnForm
+    template_name = "mfa/webauthn/activate_form." + account_settings.TEMPLATE_EXTENSION
+    success_url = reverse_lazy("mfa_view_recovery_codes")
+
+    def dispatch(self, request, *args, **kwargs):
+        if is_mfa_enabled(request.user, [Authenticator.Type.WEBAUTHN]):
+            return HttpResponseRedirect(reverse("mfa_deactivate_webauthn"))
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "creation_options": context["form"].options,
+                "expected_challenge": context["form"].expected_challenge,
+            }
+        )
+        return context
+
+    def get_form_kwargs(self):
+        ret = super().get_form_kwargs()
+        ret["user"] = self.request.user
+        return ret
+
+    def form_valid(self, form):
+        webauthn.WebAuthn.activate(
+            self.request.user,
+            form.expected_challenge,
+            form.cleaned_data["token"],
+        )
+        RecoveryCodes.activate(self.request.user)
+        adapter = get_account_adapter(self.request)
+        adapter.add_message(
+            self.request, messages.SUCCESS, "mfa/messages/webauthn_activated.txt"
+        )
+        return super().form_valid(form)
+
+
+activate_webauthn = ActivateWebAuthnView.as_view()
+
+
+@method_decorator(login_required, name="dispatch")
+class DeactivateWebAuthnView(FormView):
+    form_class = forms.Form
+    template_name = (
+        "mfa/webauthn/deactivate_form." + account_settings.TEMPLATE_EXTENSION
+    )
+    success_url = reverse_lazy("mfa_index")
+
+    def dispatch(self, request, *args, **kwargs):
+        self.authenticator = get_object_or_404(
+            Authenticator,
+            user=self.request.user,
+            type=Authenticator.Type.WEBAUTHN,
+        )
+        if not is_mfa_enabled(request.user, [Authenticator.Type.WEBAUTHN]):
+            return HttpResponseRedirect(reverse("mfa_activate_webauthn"))
+        return self._dispatch(request, *args, **kwargs)
+
+    @method_decorator(reauthentication_required)
+    def _dispatch(self, request, *args, **kwargs):
+        """There's no point to reauthenticate when MFA is not enabled, so the
+        `is_mfa_enabled` chheck needs to go first, which is why we cannot slap a
+        `reauthentication_required` decorator on the `dispatch` directly.
+        """
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        self.authenticator.wrap().deactivate()
+        adapter = get_account_adapter(self.request)
+        adapter.add_message(
+            self.request, messages.SUCCESS, "mfa/messages/webauthn_deactivated.txt"
+        )
+        return super().form_valid(form)
+
+
+deactivate_webauthn = DeactivateWebAuthnView.as_view()
 
 
 @method_decorator(reauthentication_required, name="dispatch")

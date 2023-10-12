@@ -2,6 +2,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 
 from allauth.account.stages import LoginStage
+from allauth.core import context
 from allauth.mfa.utils import is_mfa_enabled
 
 

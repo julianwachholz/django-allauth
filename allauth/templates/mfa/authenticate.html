@@ -24,4 +24,70 @@
             {% endelement %}
         {% endslot %}
     {% endelement %}
+    {% if form.request_options %}
+    <script>
+    function ab2str(buf) {
+        if (buf == null) {
+            return null;
+        };
+
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+    }
+
+    function b64str2ab(b64_encoded_string) {
+        if (b64_encoded_string == null) {
+            return null;
+        };
+
+        let string = atob(b64_encoded_string.replace(/_/g, '/').replace(/-/g, '+')),
+            buf = new ArrayBuffer(string.length),
+            bufView = new Uint8Array(buf);
+        for (var i = 0, strLen = string.length; i < strLen; i++) {
+            bufView[i] = string.charCodeAt(i);
+        }
+        return buf;
+    }
+
+    let credentialRequestOptions = {{ form.request_options|safe }};
+
+    credentialRequestOptions.challenge = b64str2ab(credentialRequestOptions.challenge);
+    for (let i = 0; i < credentialRequestOptions.allowCredentials.length; i++) {
+        credentialRequestOptions.allowCredentials[i].id = b64str2ab(credentialRequestOptions.allowCredentials[i].id);
+    }
+
+    // Only prompt after page has rendered
+    setTimeout(async () => {
+        navigator.credentials.get({
+            publicKey: credentialRequestOptions
+        }).then((assertionCredential) => {
+            let response = assertionCredential.response,
+                serializableAssertionCredential = {
+                    id: assertionCredential.id,
+                    rawId: ab2str(assertionCredential.rawId),
+                    response: {
+                        clientDataJSON: ab2str(response.clientDataJSON),
+                        authenticatorData: ab2str(response.authenticatorData),
+                        signature: ab2str(response.signature),
+                        userHandle: ab2str(response.userHandle),
+                    },
+                    type: assertionCredential.type,
+                },
+                tokenField = document.querySelector('[name=code]'),
+                authenticationTokenForm = document.forms[0];
+
+            tokenField.value = JSON.stringify(serializableAssertionCredential);
+            authenticationTokenForm.submit();
+        }, (reason) => {
+            console.debug("Authentication error: ", reason);
+
+            let errMsgNode = document.createElement("p"),
+                tokenField = document.querySelector('[name=code]');
+
+            errMsgNode.setAttribute("class", "text-danger");
+            errMsgNode.appendChild(document.createTextNode(reason));
+            tokenField.parentNode.insertBefore(errMsgNode, tokenField.nextSibling);
+        });
+    }, 500);
+    </script>
+    {% endif %}
 {% endblock content %}

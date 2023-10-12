@@ -16,6 +16,15 @@ urlpatterns = [
         ),
     ),
     path(
+        "webauthn/",
+        include(
+            [
+                path("activate/", views.activate_webauthn, name="mfa_activate_webauthn"),
+                path("deactivate/", views.deactivate_webauthn, name="mfa_deactivate_webauthn"),
+            ]
+        ),
+    ),
+    path(
         "recovery-codes/",
         include(
             [

@@ -35,6 +35,31 @@
     {% endelement %}
     {% element panel %}
         {% slot title %}
+            {% translate "WebAuthn" %}
+        {% endslot %}
+        {% slot body %}
+            {% if authenticators.webauthn %}
+                <p>{% translate "Authentication using WebAuthn is active." %}</p>
+            {% else %}
+                <p>{% translate "WebAuthn is not active." %}</p>
+            {% endif %}
+        {% endslot %}
+        {% slot actions %}
+            {% url 'mfa_deactivate_webauthn' as deactivate_url %}
+            {% url 'mfa_activate_webauthn' as activate_url %}
+            {% if authenticators.webauthn %}
+                {% element button href=deactivate_url tags="danger,delete,panel" %}
+                    {% translate "Deactivate" %}
+                {% endelement %}
+            {% else %}
+                {% element button href=activate_url tags="panel" %}
+                    {% translate "Activate" %}
+                {% endelement %}
+            {% endif %}
+        {% endslot %}
+    {% endelement %}
+    {% element panel %}
+        {% slot title %}
             {% translate "Recovery Codes" %}
         {% endslot %}
         {% slot body %}
